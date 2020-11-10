@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import Alamofire
 
 private let dateFormatter: DateFormatter = {
     let dateFormatter = DateFormatter()
@@ -15,57 +16,109 @@ private let dateFormatter: DateFormatter = {
     return dateFormatter
 }()
 
+struct Author: Decodable, Hashable {
+    var firstName = ""
+    var lastName = ""
+    var fullName: String {
+        return "\(self.firstName) \(self.lastName)"
+    }
+}
+
 struct ContentView: View {
-    @State private var dates = [Date]()
+    @State private var authors = [Author]()
 
     var body: some View {
         NavigationView {
-            MasterView(dates: $dates)
-                .navigationBarTitle(Text("Master"))
-                .navigationBarItems(
-                    leading: EditButton(),
-                    trailing: Button(
-                        action: {
-                            withAnimation { self.dates.insert(Date(), at: 0) }
-                        }
-                    ) {
-                        Image(systemName: "plus")
-                    }
-                )
+            MasterView(authors: $authors)
+                .navigationBarTitle(Text("Search"))
             DetailView()
         }.navigationViewStyle(DoubleColumnNavigationViewStyle())
     }
 }
 
 struct MasterView: View {
-    @Binding var dates: [Date]
+    @Binding var authors: [Author]
+    @State private var seartchText = ""
+    @State private var showCancelButton = false
+    @State private var showAlert = false
 
     var body: some View {
         List {
-            ForEach(dates, id: \.self) { date in
-                NavigationLink(
-                    destination: DetailView(selectedDate: date)
-                ) {
-                    Text("\(date, formatter: dateFormatter)")
+            HStack {
+                TextField("Enter author name", text: $seartchText
+                    ,onEditingChanged: { isEnding in
+                        self.showCancelButton = true
+                    }
+                    ,onCommit: {
+                        self.authors.removeAll(keepingCapacity: true)
+                        if !self.seartchText.isEmpty {
+                            // Alamofire
+                            if let url = URL(string: "https://reststop.randomhouse.com/resources/authors") {
+                            //                       let searchParam = searchBar.selectedScopeButtonIndex == 0 ? "firstName" : "lastName"
+                                let searchParam = "firstName"
+                                let params = ["start": "0", "max": "3", "expandLevel": "1", searchParam : self.seartchText]
+                                let headers:HTTPHeaders = ["Accept": "application/json"]
+                                Alamofire.request(url, method: .get, parameters: params, encoding: URLEncoding.default, headers: headers).responseJSON {(response) in
+                                    self.seartchText = ""
+                                    self.showCancelButton = false
+                                    guard response.result.isSuccess else {
+                                       print("Error: \(String(describing: response.result.error))")
+                                       return
+                                    }
+                                    guard let value = response.result.value as? [String: AnyObject]
+                                       ,let rows = value["author"] as? [[String: Any]]
+                                       else {
+                                            print("Error: no authors found")
+                                            self.showAlert = true
+                                            return
+                                    }
+                                    for item in rows {
+                                       let authorFirst = (item["authorfirst"] ?? "") as! String
+                                       let authorLast = (item["authorlast"] ?? "") as! String
+                                       self.authors.append(Author(firstName: authorFirst, lastName: authorLast))
+                                    }
+                                    print(self.authors)
+                                }
+                            }
+                        }
+                    }
+                )
+                .alert(isPresented: $showAlert, content: {
+                    Alert(title: Text("No authors found"))
+                })
+                if self.showCancelButton {
+                    Button(action: {
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                        self.showCancelButton = false
+                        self.seartchText = ""
+                        
+                    },
+                    label: {Text("Cancel")})
+                    .foregroundColor(Color(.blue))
                 }
-            }.onDelete { indices in
-                indices.forEach { self.dates.remove(at: $0) }
+            }
+            ForEach(self.authors, id: \.self) { author in
+                NavigationLink(
+                    destination: DetailView(selectedAuthor: author)
+                ) {
+                    Text(author.fullName)
+                }
             }
         }
     }
 }
 
 struct DetailView: View {
-    var selectedDate: Date?
+    var selectedAuthor: Author?
 
     var body: some View {
         Group {
-            if selectedDate != nil {
-                Text("\(selectedDate!, formatter: dateFormatter)")
+            if selectedAuthor != nil {
+                Text(selectedAuthor!.fullName)
             } else {
                 Text("Detail view content goes here")
             }
-        }.navigationBarTitle(Text("Detail"))
+        }.navigationBarTitle(Text("Author"))
     }
 }
 
