@@ -9,14 +9,8 @@
 import SwiftUI
 import Alamofire
 
-private let dateFormatter: DateFormatter = {
-    let dateFormatter = DateFormatter()
-    dateFormatter.dateStyle = .medium
-    dateFormatter.timeStyle = .medium
-    return dateFormatter
-}()
-
 struct Author: Decodable, Hashable {
+    var id: Int
     var firstName = ""
     var lastName = ""
     var fullName: String {
@@ -38,28 +32,29 @@ struct ContentView: View {
 
 struct MasterView: View {
     @Binding var authors: [Author]
-    @State private var seartchText = ""
+    @State private var searchText = ""
     @State private var showCancelButton = false
     @State private var showAlert = false
+    @State private var selectedIndex = 0
+    private let searchTypes = ["firstName", "lastName"]
 
     var body: some View {
         List {
             HStack {
-                TextField("Enter author name", text: $seartchText
+                TextField("Enter author name", text: $searchText
                     ,onEditingChanged: { isEnding in
                         self.showCancelButton = true
                     }
                     ,onCommit: {
                         self.authors.removeAll(keepingCapacity: true)
-                        if !self.seartchText.isEmpty {
+                        if !self.searchText.isEmpty {
                             // Alamofire
                             if let url = URL(string: "https://reststop.randomhouse.com/resources/authors") {
-                            //                       let searchParam = searchBar.selectedScopeButtonIndex == 0 ? "firstName" : "lastName"
-                                let searchParam = "firstName"
-                                let params = ["start": "0", "max": "3", "expandLevel": "1", searchParam : self.seartchText]
+                                let searchParam = self.searchTypes[self.selectedIndex]
+                                let params = ["start": "0", "max": "3", "expandLevel": "1", searchParam : self.searchText]
                                 let headers:HTTPHeaders = ["Accept": "application/json"]
                                 Alamofire.request(url, method: .get, parameters: params, encoding: URLEncoding.default, headers: headers).responseJSON {(response) in
-                                    self.seartchText = ""
+                                    self.searchText = ""
                                     self.showCancelButton = false
                                     guard response.result.isSuccess else {
                                        print("Error: \(String(describing: response.result.error))")
@@ -73,9 +68,10 @@ struct MasterView: View {
                                             return
                                     }
                                     for item in rows {
-                                       let authorFirst = (item["authorfirst"] ?? "") as! String
-                                       let authorLast = (item["authorlast"] ?? "") as! String
-                                       self.authors.append(Author(firstName: authorFirst, lastName: authorLast))
+                                        let authorId = Int(item["authorid"] as! String)!
+                                        let authorFirst = (item["authorfirst"] ?? "") as! String
+                                        let authorLast = (item["authorlast"] ?? "") as! String
+                                        self.authors.append(Author(id: authorId, firstName: authorFirst, lastName: authorLast))
                                     }
                                     print(self.authors)
                                 }
@@ -90,13 +86,20 @@ struct MasterView: View {
                     Button(action: {
                         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                         self.showCancelButton = false
-                        self.seartchText = ""
+                        self.searchText = ""
                         
                     },
                     label: {Text("Cancel")})
                     .foregroundColor(Color(.blue))
                 }
             }
+            
+            Picker(selection: $selectedIndex, label: Text("Search type")) {
+                ForEach(0..<self.searchTypes.count) { index in
+                    Text(self.searchTypes[index]).tag(index)
+                }
+            }.pickerStyle(SegmentedPickerStyle())
+
             ForEach(self.authors, id: \.self) { author in
                 NavigationLink(
                     destination: DetailView(selectedAuthor: author)
