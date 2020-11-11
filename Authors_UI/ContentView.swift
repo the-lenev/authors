@@ -8,13 +8,37 @@
 
 import SwiftUI
 import Alamofire
+import WebKit
 
 struct Author: Decodable, Hashable {
     var id: Int
     var firstName = ""
     var lastName = ""
+    var spotlight = ""
+    var description = ""
+    var worksIds = [Int]()
     var fullName: String {
         return "\(self.firstName) \(self.lastName)"
+    }
+    
+    init(_ listParams: [String: Any]){
+        self.id = Int(listParams["authorid"] as! String)!
+        self.firstName = (listParams["authorfirst"] ?? "") as! String
+        self.lastName = (listParams["authorlast"] ?? "") as! String
+        self.spotlight = (listParams["spotlight"] ?? "") as! String
+        if let attributedString = try? NSAttributedString(data: Data(self.spotlight.utf8), options: [.documentType: NSAttributedString.DocumentType.html], documentAttributes: nil) {
+            self.description = attributedString.string
+        }
+        
+        if let works = listParams["works"] as? [String: Any] {
+            if let work = works["works"] as? String {
+                self.worksIds.append(Int(work)!)
+            } else if let workList = works["works"] as? [String] {
+                for work in workList {
+                    self.worksIds.append(Int(work)!)
+                }
+            }
+        }
     }
 }
 
@@ -51,7 +75,7 @@ struct MasterView: View {
                             // Alamofire
                             if let url = URL(string: "https://reststop.randomhouse.com/resources/authors") {
                                 let searchParam = self.searchTypes[self.selectedIndex]
-                                let params = ["start": "0", "max": "3", "expandLevel": "1", searchParam : self.searchText]
+                                let params = ["start": "0", "max": "10", "expandLevel": "1", searchParam : self.searchText]
                                 let headers:HTTPHeaders = ["Accept": "application/json"]
                                 Alamofire.request(url, method: .get, parameters: params, encoding: URLEncoding.default, headers: headers).responseJSON {(response) in
                                     self.searchText = ""
@@ -68,10 +92,7 @@ struct MasterView: View {
                                             return
                                     }
                                     for item in rows {
-                                        let authorId = Int(item["authorid"] as! String)!
-                                        let authorFirst = (item["authorfirst"] ?? "") as! String
-                                        let authorLast = (item["authorlast"] ?? "") as! String
-                                        self.authors.append(Author(id: authorId, firstName: authorFirst, lastName: authorLast))
+                                        self.authors.append(Author(item))
                                     }
                                     print(self.authors)
                                 }
@@ -115,13 +136,41 @@ struct DetailView: View {
     var selectedAuthor: Author?
 
     var body: some View {
-        Group {
+        List {
             if selectedAuthor != nil {
                 Text(selectedAuthor!.fullName)
+                if self.selectedAuthor!.spotlight != "" {
+                    HTMLStringView(htmlContent: self.selectedAuthor!.spotlight)
+                    Text(selectedAuthor!.description)
+                } else {
+                    Text("No description").foregroundColor(.gray)
+                }
+                Text("List of works:")
+                if !selectedAuthor!.worksIds.isEmpty {
+                    ForEach(selectedAuthor!.worksIds, id: \.self) { id in
+                        Text(String(id))
+                    }
+                } else {
+                    Text("No works").foregroundColor(.gray)
+                }
             } else {
                 Text("Detail view content goes here")
             }
         }.navigationBarTitle(Text("Author"))
+    }
+}
+
+struct HTMLStringView: UIViewRepresentable
+{
+    let htmlContent: String
+
+    func makeUIView(context: Context) -> WKWebView {
+        return WKWebView()
+    }
+    func updateUIView(_ webView: WKWebView, context: Context) {
+        DispatchQueue.main.async {
+            webView.loadHTMLString(self.htmlContent, baseURL: nil)
+        }
     }
 }
 
